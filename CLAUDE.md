@@ -4,8 +4,11 @@ SWD（斑翅果蝇，*Drosophila suzukii*）图像监测网络的 Web 平台：�
 
 ## 当前状态（2026-10-12）
 
-- 需求已确认（SPEC v0.2），还没写代码，也还没 `git init`。
-- 下一步：第一期，先写 `edge-uploader/`（复制到 Pi 上直接运行，只依赖 Python 和 `requests`，越简单越好），再定 Firebase 结构和 Rules，然后做网站。
+- 第一期第 1 项完成（分支 `feat/edge-node`）：设计见 `docs/superpowers/specs/2026-10-12-edge-node-design.md`，计划见 `docs/superpowers/plans/2026-10-12-edge-node.md`。
+  - `edge/`：Pi 上的采集脚本 `capture.py`（拍照 + 切块推理 + 中午缩略图 + 原图滚动删除）和上传程序 `uploader.py`（SPEC 里叫 `edge-uploader/`，因为也装了采集脚本而改名）。
+  - 根目录：`database.rules.json`、`storage.rules`（演示级），用 Firebase Emulator 测试（`npm run test:rules`、`bash scripts/e2e.sh`）。
+  - 还没做：真机验证、新建云端 Firebase 项目并部署 Rules、批量创建 14 个设备账号。
+- 下一步：第一期第 2 项起（种子数据、网站）。
 - 本项目装了 superpowers 插件（project scope），按它的 brainstorming → plan → 实现流程来做。
 
 ## 约定

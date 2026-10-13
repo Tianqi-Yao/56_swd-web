@@ -157,7 +157,8 @@ def test_upload_jpeg_url_and_headers(cfg):
 
 @responses.activate
 def test_emulator_endpoints(make_cfg):
-    cfg = make_cfg(emulator_host="127.0.0.1")
+    # Emulator 把 database.rules.json 加载到 <project>-default-rtdb，namespace 要和 db_url 一致
+    cfg = make_cfg(emulator_host="127.0.0.1", db_url="https://demo-swd-web-default-rtdb.firebaseio.com")
     responses.add(responses.POST,
                   "http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword",
                   json={"idToken": "E1", "refreshToken": "R", "expiresIn": "3600"})
@@ -166,4 +167,4 @@ def test_emulator_endpoints(make_cfg):
     client = FirebaseClient(cfg, clock=Clock())
     client.put("heartbeat/MSU1", {})
     client.upload_jpeg("thumbs/MSU1/2026-07-15.jpg", b"x")
-    assert qs(responses.calls[1]) == {"ns": ["demo-swd-web"], "auth": ["E1"]}
+    assert qs(responses.calls[1]) == {"ns": ["demo-swd-web-default-rtdb"], "auth": ["E1"]}

@@ -1,0 +1,10 @@
+[Unit]
+Description=SWD trap: capture every 30 min, 06:00-20:00
+
+[Timer]
+OnCalendar=*-*-* 06..19:00,30:00
+OnCalendar=*-*-* 20:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

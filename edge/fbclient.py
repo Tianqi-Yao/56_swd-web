@@ -11,7 +11,7 @@ import json
 import os
 import time
 from typing import Callable, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import requests
 
@@ -19,7 +19,6 @@ from common import Config
 
 TIMEOUT = 30
 REFRESH_MARGIN = 300  # token 剩不到 5 分钟就刷新
-EMULATOR_NS = "demo-swd-web"
 
 
 class NetworkError(Exception):
@@ -50,6 +49,9 @@ class FirebaseClient:
             self.auth_base = f"http://{host}:9099/identitytoolkit.googleapis.com/v1"
             self.refresh_url = f"http://{host}:9099/securetoken.googleapis.com/v1/token"
             self.db_base = f"http://{host}:9000"
+            # Emulator 按 namespace 区分数据库，规则加载在 <project>-default-rtdb 上，
+            # 所以 namespace 取 db_url 主机名的第一段，跟云端实例名一致
+            self.db_ns = (urlparse(cfg.db_url).hostname or "").split(".")[0]
             self.storage_base = f"http://{host}:9199/v0/b/{cfg.bucket}/o"
         else:
             self.auth_base = "https://identitytoolkit.googleapis.com/v1"
@@ -80,7 +82,7 @@ class FirebaseClient:
     def _db(self, method: str, path: str, data: dict) -> None:
         params = {"auth": self._id_token()}
         if self.cfg.emulator_host:
-            params = {"ns": EMULATOR_NS, **params}
+            params = {"ns": self.db_ns, **params}
         url = f"{self.db_base}/{path.strip('/')}.json"
         self._request(method, url, params=params, data=json.dumps(data))
 

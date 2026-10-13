@@ -1,0 +1,10 @@
+[Unit]
+Description=SWD trap: upload outbox to Firebase
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/swd/edge
+ExecStart=/usr/bin/python3 %h/swd/edge/uploader.py --config %h/swd/edge/config.ini
+TimeoutStartSec=30min
