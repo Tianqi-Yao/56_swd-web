@@ -46,3 +46,23 @@ def image_status(images_dir: Path, disk_path: Path, state_dir: Path, now: dateti
         "oldestImageAt": oldest.isoformat() if oldest else None,
         "imgRolling": rolling,
     }
+
+
+def prune_images(images_dir: Path, disk_path: Path, max_pct: float, state_dir: Path,
+                 now: datetime) -> List[Path]:
+    """原图总量超过磁盘总容量的 max_pct% 时，从最旧的开始删，删到不超过为止。"""
+    files = _image_files(images_dir)
+    sizes = [p.stat().st_size for p in files]
+    used = sum(sizes)
+    limit = shutil.disk_usage(disk_path).total * max_pct / 100
+    deleted: List[Path] = []
+    for p, size in zip(files, sizes):
+        if used <= limit:
+            break
+        p.unlink()
+        used -= size
+        deleted.append(p)
+    if deleted:
+        Path(state_dir).mkdir(parents=True, exist_ok=True)
+        (Path(state_dir) / LAST_PRUNE).write_text(now.isoformat())
+    return deleted
