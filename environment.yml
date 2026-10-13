@@ -5,3 +5,11 @@ dependencies:
   - python=3.12
   - nodejs=22
   - pip
+  - pip:
+      # edge/：Pi 端代码的开发和测试
+      - requests
+      - pytest
+      - responses
+      - opencv-python-headless
+      - ultralytics
+      - ncnn

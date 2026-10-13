@@ -1,0 +1,30 @@
+{
+  "rules": {
+    ".read": "auth != null && root.child('users').child(auth.uid).exists()",
+    ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
+    "readings": {
+      "$id": {
+        ".read": "auth != null && root.child('devices').child(auth.uid).val() === $id",
+        ".write": "auth != null && root.child('devices').child(auth.uid).val() === $id",
+        "$date": {
+          "$time": {
+            ".validate": "newData.hasChildren(['device_id', 'acquired_at', 'count_male_swd'])",
+            "count_male_swd": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
+            }
+          }
+        }
+      }
+    },
+    "thumbs": {
+      "$id": {
+        ".write": "auth != null && root.child('devices').child(auth.uid).val() === $id"
+      }
+    },
+    "heartbeat": {
+      "$id": {
+        ".write": "auth != null && root.child('devices').child(auth.uid).val() === $id"
+      }
+    }
+  }
+}

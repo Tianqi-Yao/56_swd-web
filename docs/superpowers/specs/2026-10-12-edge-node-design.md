@@ -103,6 +103,7 @@
   - **缩略图传不上**（文件不存在、超过 500 KB，或 Storage 返回 4xx）：读数照常写入，只是没有缩略图，同时写日志 **（我的判断）**。
   - **成功**：文件移到 `sent/YYYY-MM-DD/`。
 - **幂等。**读数用 PUT 写到固定路径，重复上传只会覆盖，不会出现两份。
+- **重复时间戳（2026-10-12 用户决定加后缀）。**设备时钟故障时，不同的记录可能落在同一个时间点。上传程序先给每条记录分配 `record_id`（写回 outbox 文件），上传前读一下目标键：空着或者 `record_id` 相同（同一条在重传）就写这个键，否则依次试 `{HHMMSS}_1`、`{HHMMSS}_2`……
 - **心跳。**每轮结束时 PATCH `heartbeat/{id}`，即使 `outbox/` 是空的也写，这样网站能分清"节点活着、只是没拍照"和"节点掉线"。心跳写失败不影响读数。
 - **清理。**`sent/` 里超过 30 天的文件删除，天数可以配置。
 - **传感器补全**（只补缺失或为 null 的字段）：
@@ -132,7 +133,7 @@
 
 - 路径沿用 SPEC 第 4 节。本轮只会写入三条路径：`readings`、`thumbs`、`heartbeat`。
 - **设备身份。**每台 Pi 用一个 Email/Password 账号。管理员在 `/devices/{uid}` 写入设备名（如 `"MSU1"`），Rules 查这张表判断这个账号能写哪台设备的数据。不用 custom claims，因为那需要 Admin SDK。
-- **设备的写权限。**只能写 `readings/$id`、`thumbs/$id`、`heartbeat/$id`，条件是 `root.child('devices').child(auth.uid).val() === $id`。写读数时校验 `count_male_swd` 是非负整数。
+- **设备的写权限。**只能写 `readings/$id`、`thumbs/$id`、`heartbeat/$id`，条件是 `root.child('devices').child(auth.uid).val() === $id`。写读数时校验 `count_male_swd` 是非负整数。设备还能读自己的 `readings/$id`，用来检查重复时间戳。
 - **网站用户。**`/users/{uid}` 存在，就视为已登录用户，可以读全部数据。`users` 和 `devices` 只有 `role == "admin"` 的用户能写。角色字段本轮只存，不按它区分页面权限。
 - **服务器时间。**每条读数和每次心跳都带 `serverTime: {".sv": "timestamp"}`，供以后判定时钟故障（SPEC 第 5 节）。
 - **Storage。**缩略图路径是 `thumbs/{device_id}/{YYYY-MM-DD}.jpg`。Storage Rules 读不到 RTDB，所以演示期只要求三条：已登录、`image/jpeg`、小于 500 KB。严格版后补，并在 README 里注明。
@@ -153,10 +154,11 @@
 | `boxes`、`img_w`、`img_h` | 否 | 只有中午那条有。`boxes` 为 `[[x1,y1,x2,y2,conf], ...]`，原图像素坐标 |
 | `thumb` | 否 | 只有中午那条有，是缩略图目录里的文件名 |
 | `temp_c`、`rh`、`battery_v`、`free_gb` | 否 | 采集脚本不写，由上传程序补全 |
+| `record_id` | 否 | 记录的唯一 ID。缺失时上传程序生成 32 位十六进制并写回文件，用来区分重复时间戳和重传 |
 
 ### 6.2 写入 RTDB 的数据
 
-- `readings/{id}/{YYYY-MM-DD}/{HHMMSS}`：上表中除 `thumb`、`boxes`、`img_w`、`img_h` 以外的全部字段，再加上 `serverTime`。日期和时分秒直接取自 `acquired_at` 的本地时间部分，不做时区换算。
+- `readings/{id}/{YYYY-MM-DD}/{HHMMSS}`（时间点已被另一条记录占用时为 `{HHMMSS}_1`、`_2`……）：上表中除 `thumb`、`boxes`、`img_w`、`img_h` 以外的全部字段，再加上 `serverTime`。日期和时分秒直接取自 `acquired_at` 的本地时间部分，不做时区换算。
 - `thumbs/{id}/{YYYY-MM-DD}`：`{storagePath, acquiredAt, boxes, imgW, imgH}`。
 - `heartbeat/{id}`：`{deviceTime, serverTime, lastReadingAt, imgUsedPct, oldestImageAt, imgRolling}`。
   - `deviceTime` 是 Pi 的当前时间。

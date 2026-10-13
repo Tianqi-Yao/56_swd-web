@@ -1,0 +1,8 @@
+[Unit]
+Description=SWD trap: capture one photo and count male SWD
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/swd/edge
+ExecStart=/usr/bin/python3 %h/swd/edge/capture.py --config %h/swd/edge/config.ini
+TimeoutStartSec=15min
