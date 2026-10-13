@@ -1,0 +1,14 @@
+rules_version = '2';
+
+// 演示级规则：Storage Rules 读不到 RTDB 的 /devices 映射，
+// 暂时只要求已登录 + JPEG + 小于 500 KB。严格版（每台设备只能写自己的目录）后补。
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /thumbs/{deviceId}/{file} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 500 * 1024
+        && request.resource.contentType == 'image/jpeg';
+    }
+  }
+}
