@@ -1,0 +1,18 @@
+# 原始数据和 Pi 代码快照，不进 git（见 CLAUDE.md）
+data/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / Firebase
+node_modules/
+.firebase/
+*-debug.log
+
+# 本地配置和密钥
+config.ini
+.env*
+
+.DS_Store
