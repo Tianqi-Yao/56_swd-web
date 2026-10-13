@@ -92,7 +92,7 @@ ls ~/swd/outbox ~/swd/bad
 
 每条记录是一个文件 `outbox/{device_id}_{YYYYMMDD_HHMMSS}.json`。**必须先写成 `.json.tmp`，写完再改名成 `.json`**，上传程序只读 `.json`，并且会跳过修改时间在 60 秒以内的文件。
 
-必填字段：`device_id`、`acquired_at`（带时区偏移的 ISO8601）、`count_male_swd`（非负整数）。字段的完整说明见 `docs/superpowers/specs/2026-10-12-edge-node-design.md` 第 6 节。
+必填字段：`device_id`、`acquired_at`（带时区偏移的 ISO8601）、`count_male_swd`（非负整数）。上传程序会给每条记录加一个 `record_id` 并写回文件。时钟故障导致两条记录时间相同时，数据库里第二条存成 `HHMMSS_1`，两条都保留。字段的完整说明见 `docs/superpowers/specs/2026-10-12-edge-node-design.md` 第 6 节。
 
 ## 安全说明（演示级）
 

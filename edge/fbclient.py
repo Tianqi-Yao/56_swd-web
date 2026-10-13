@@ -64,6 +64,10 @@ class FirebaseClient:
 
     # ---------- 公共接口 ----------
 
+    def get(self, path: str):
+        """读一个节点，不存在时返回 None。"""
+        return self._with_token(lambda tok: self._db("GET", path, None, tok)).json()
+
     def put(self, path: str, data: dict) -> None:
         self._with_token(lambda tok: self._db("PUT", path, data, tok))
 
@@ -81,23 +85,24 @@ class FirebaseClient:
 
     # ---------- 内部 ----------
 
-    def _with_token(self, call) -> None:
+    def _with_token(self, call):
         """缓存的 token 被拒（401/403）时重新登录再试一次；刚拿到的 token 被拒就是真没权限。"""
         token = self._id_token()
         try:
-            call(token)
+            return call(token)
         except AuthError:
             if self._token_fresh:
                 raise
             self._sign_in()
-            call(self._token["id_token"])
+            return call(self._token["id_token"])
 
-    def _db(self, method: str, path: str, data: dict, token: str) -> None:
+    def _db(self, method: str, path: str, data: Optional[dict], token: str) -> requests.Response:
         params = {"auth": token}
         if self.cfg.emulator_host:
             params = {"ns": self.db_ns, **params}
         url = f"{self.db_base}/{path.strip('/')}.json"
-        self._request(method, url, params=params, data=json.dumps(data))
+        body = None if data is None else json.dumps(data)
+        return self._request(method, url, params=params, data=body)
 
     def _request(self, method: str, url: str, **kw) -> requests.Response:
         try:

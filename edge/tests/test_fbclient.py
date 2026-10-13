@@ -136,6 +136,21 @@ def test_put_400_raises_client_error(cfg):
 
 
 @responses.activate
+def test_get_returns_parsed_json(cfg):
+    add_signin()
+    responses.add(responses.GET, READING, json={"record_id": "abc"})
+    assert FirebaseClient(cfg, clock=Clock()).get("readings/MSU1/2026-07-15/120003") == {"record_id": "abc"}
+    assert qs(responses.calls[1])["auth"] == ["ID1"]
+
+
+@responses.activate
+def test_get_missing_returns_none(cfg):
+    add_signin()
+    responses.add(responses.GET, READING, body="null")
+    assert FirebaseClient(cfg, clock=Clock()).get("readings/MSU1/2026-07-15/120003") is None
+
+
+@responses.activate
 def test_patch_uses_patch_method(cfg):
     add_signin()
     responses.add(responses.PATCH, f"{DB}/heartbeat/MSU1.json", json={})

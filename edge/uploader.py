@@ -14,11 +14,12 @@ import json
 import logging
 import shutil
 import sys
+import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from common import Config, load_config, local_naive, parse_acquired_at, unique_path
+from common import Config, load_config, local_naive, parse_acquired_at, unique_path, write_json_atomic
 from fbclient import AuthError, ClientError, FirebaseClient, NetworkError
 from images import image_status
 from sensors import free_gb, read_battery, read_temp_rh
@@ -99,6 +100,24 @@ def _upload_thumb(rec: dict, cfg: Config, client: FirebaseClient, day: str) -> N
         log.warning("thumbnail upload rejected, uploading count only: %s", e)
 
 
+def _ensure_record_id(rec: dict, path: Path) -> None:
+    """给记录一个唯一 ID 并写回 outbox 文件，这样断网重试时还能认出是同一条。"""
+    if not rec.get("record_id"):
+        rec["record_id"] = uuid.uuid4().hex
+        write_json_atomic(path, rec)
+
+
+def _reading_key(client: FirebaseClient, base: str, record_id: str) -> str:
+    """时钟故障会让不同记录落在同一个时间点：被别的记录占了就依次试 _1、_2……"""
+    key, i = base, 0
+    while True:
+        existing = client.get(key)
+        if not existing or existing.get("record_id") == record_id:
+            return key
+        i += 1
+        key = f"{base}_{i}"
+
+
 def _move(src: Path, dest_dir: Path) -> None:
     dest_dir.mkdir(parents=True, exist_ok=True)
     src.replace(unique_path(dest_dir / src.name))
@@ -140,6 +159,10 @@ def run_once(cfg: Config, client: FirebaseClient, now: datetime) -> dict:
 
         day, hms = at.strftime("%Y-%m-%d"), at.strftime("%H%M%S")
         try:
+            _ensure_record_id(rec, path)
+        except OSError:
+            continue  # 文件在扫描期间被挪走了，或磁盘写不进去，下次再试
+        try:
             _fill_sensors(rec, cfg, at)
         except Exception:
             log.exception("sensor fill failed for %s, uploading without sensor values", path.name)
@@ -148,7 +171,8 @@ def run_once(cfg: Config, client: FirebaseClient, now: datetime) -> dict:
                 _upload_thumb(rec, cfg, client, day)
             reading = {k: v for k, v in rec.items() if k not in LOCAL_ONLY and v is not None}
             reading["serverTime"] = SERVER_TIME
-            client.put(f"readings/{cfg.device_id}/{day}/{hms}", reading)
+            key = _reading_key(client, f"readings/{cfg.device_id}/{day}/{hms}", rec["record_id"])
+            client.put(key, reading)
         except NetworkError as e:
             log.warning("network error, stopping this run: %s", e)
             result["stopped"] = "network"

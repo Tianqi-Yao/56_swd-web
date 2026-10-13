@@ -100,3 +100,20 @@ def test_e2e_rules_block_other_device(device_cfg):
     with pytest.raises(AuthError):
         FirebaseClient(device_cfg).put("readings/HSH1/2026-07-15/120003", {
             "device_id": "HSH1", "acquired_at": "2026-07-15T12:00:03-05:00", "count_male_swd": 1})
+
+
+def test_e2e_duplicate_timestamp_keeps_both(device_cfg):
+    """时钟故障：两条不同的记录落在同一时间点，第二条存到 _1；同一条重传仍覆盖原键。"""
+    cfg = device_cfg
+    put_outbox(cfg, "120003", count_male_swd=2)
+    run_once(cfg, FirebaseClient(cfg), NOW)
+    first = owner_get("readings/MSU1/2026-07-15/120003")
+
+    put_outbox(cfg, "120003", count_male_swd=7)
+    run_once(cfg, FirebaseClient(cfg), NOW)
+
+    readings = owner_get("readings/MSU1/2026-07-15")
+    assert sorted(readings) == ["120003", "120003_1"]
+    assert readings["120003"]["record_id"] == first["record_id"]
+    assert readings["120003"]["count_male_swd"] == 2
+    assert readings["120003_1"]["count_male_swd"] == 7

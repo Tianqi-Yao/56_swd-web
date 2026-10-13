@@ -96,8 +96,12 @@ describe("users", () => {
     await assertFails(db().ref("readings/MSU1").get());
   });
 
-  it("device account without users entry cannot read", async () => {
-    await assertFails(db("dev1").ref("readings/MSU1").get());
+  it("device reads own readings only", async () => {
+    // 上传前要查这个时间点是否已被别的记录占用（时钟故障会产生重复时间戳）
+    await assertSucceeds(db("dev1").ref("readings/MSU1/2026-07-15/120003").get());
+    await assertFails(db("dev1").ref("readings/HSH1").get());
+    await assertFails(db("dev1").ref("users").get());
+    await assertFails(db("dev1").ref("devices").get());
   });
 
   it("grower can read readings but cannot write users", async () => {

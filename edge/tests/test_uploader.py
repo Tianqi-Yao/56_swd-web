@@ -18,10 +18,13 @@ Usage = namedtuple("Usage", "total used free")
 class FakeClient:
     """记录所有调用；fail_on={调用序号(从1开始): 异常} 用来模拟出错。"""
 
-    def __init__(self, fail_on=None, fail_upload=None):
+    def __init__(self, fail_on=None, fail_upload=None, existing=None, fail_get=None):
         self.calls = []
         self.fail_on = fail_on or {}
         self.fail_upload = fail_upload
+        self.existing = existing or {}  # 数据库里已有的节点 {path: data}
+        self.fail_get = fail_get
+        self.gets = []
 
     def _call(self, kind, path, data):
         self.calls.append((kind, path, data))
@@ -34,6 +37,12 @@ class FakeClient:
 
     def patch(self, path, data):
         self._call("patch", path, data)
+
+    def get(self, path):
+        self.gets.append(path)
+        if self.fail_get:
+            raise self.fail_get
+        return self.existing.get(path)
 
     def upload_jpeg(self, storage_path, data):
         if self.fail_upload:
@@ -343,3 +352,60 @@ def test_sent_name_collision_keeps_both(cfg):
     put_outbox(cfg, "a.json", record(hms="123003"))
     run_once(cfg, FakeClient(), NOW)
     assert len(list((cfg.sent_dir / "2026-07-15").iterdir())) == 2
+
+
+# ---------- 重复时间戳（时钟故障）----------
+
+R = "readings/MSU1/2026-07-15/120003"
+
+
+def test_record_id_added_and_uploaded(cfg):
+    put_outbox(cfg, "a.json", record())
+    client = FakeClient()
+    run_once(cfg, client, NOW)
+    rid = client.puts()[0][1]["record_id"]
+    assert isinstance(rid, str) and len(rid) == 32
+    saved = json.loads((cfg.sent_dir / "2026-07-15" / "a.json").read_text())
+    assert saved["record_id"] == rid
+
+
+def test_duplicate_timestamp_gets_suffix(cfg):
+    put_outbox(cfg, "a.json", record())
+    client = FakeClient(existing={R: {"record_id": "other", "count_male_swd": 5}})
+    run_once(cfg, client, NOW)
+    assert [p for p, _ in client.puts()] == [R + "_1"]
+
+
+def test_suffix_skips_taken_keys(cfg):
+    put_outbox(cfg, "a.json", record())
+    client = FakeClient(existing={R: {"record_id": "x"}, R + "_1": {"record_id": "y"}})
+    run_once(cfg, client, NOW)
+    assert [p for p, _ in client.puts()] == [R + "_2"]
+
+
+def test_retry_after_network_error_reuses_same_key(cfg):
+    """第一次 PUT 其实成功了但没收到响应：重试时认出是自己，覆盖同一个键，不生成后缀。"""
+    put_outbox(cfg, "a.json", record())
+    first = FakeClient(fail_on={1: NetworkError("timeout")})
+    run_once(cfg, first, NOW)
+    (path, data), = first.puts()
+    assert path == R and (cfg.outbox_dir / "a.json").exists()
+
+    second = FakeClient(existing={R: data})
+    run_once(cfg, second, NOW)
+    assert [(p, d["record_id"]) for p, d in second.puts()] == [(R, data["record_id"])]
+
+
+def test_existing_record_id_kept(cfg):
+    put_outbox(cfg, "a.json", record(record_id="fromcapture"))
+    client = FakeClient(existing={R: {"record_id": "fromcapture"}})
+    run_once(cfg, client, NOW)
+    assert [(p, d["record_id"]) for p, d in client.puts()] == [(R, "fromcapture")]
+
+
+def test_lookup_network_error_stops(cfg):
+    put_outbox(cfg, "a.json", record())
+    client = FakeClient(fail_get=NetworkError("down"))
+    result = run_once(cfg, client, NOW)
+    assert result["stopped"] == "network" and client.puts() == []
+    assert (cfg.outbox_dir / "a.json").exists()

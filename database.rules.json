@@ -4,6 +4,7 @@
     ".write": "auth != null && root.child('users').child(auth.uid).child('role').val() === 'admin'",
     "readings": {
       "$id": {
+        ".read": "auth != null && root.child('devices').child(auth.uid).val() === $id",
         ".write": "auth != null && root.child('devices').child(auth.uid).val() === $id",
         "$date": {
           "$time": {
