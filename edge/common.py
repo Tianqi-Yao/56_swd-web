@@ -88,6 +88,19 @@ def local_naive(dt: datetime) -> datetime:
     return dt.replace(tzinfo=None)
 
 
+def unique_path(path: Path) -> Path:
+    """同名文件已存在时返回 name_1.ext、name_2.ext……，避免覆盖（RTC 故障会产生重复时间戳）。"""
+    path = Path(path)
+    if not path.exists():
+        return path
+    i = 1
+    while True:
+        cand = path.with_name(f"{path.stem}_{i}{path.suffix}")
+        if not cand.exists():
+            return cand
+        i += 1
+
+
 def write_json_atomic(path: Path, obj: dict) -> None:
     """先写 <name>.tmp 再改名，读的一方永远看不到写了一半的 .json。"""
     path = Path(path)

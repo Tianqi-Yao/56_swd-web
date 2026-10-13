@@ -135,3 +135,11 @@ def test_capture_prunes_before_shooting(cfg, monkeypatch):
     monkeypatch.setattr(capture, "prune_images", lambda *a: calls.append(a) or [])
     capture_once(cfg, at(9, 30), FakeModel(), run=FakeRun())
     assert calls and calls[0][2] == 60.0
+
+
+def test_same_timestamp_twice_keeps_both_records_and_photos(cfg):
+    # RTC 每次开机都回到同一时刻时，同名文件不能互相覆盖
+    capture_once(cfg, at(9, 30), FakeModel(), run=FakeRun())
+    capture_once(cfg, at(9, 30), FakeModel(), run=FakeRun())
+    assert len(list(cfg.outbox_dir.glob("*.json"))) == 2
+    assert len(list(cfg.images_dir.glob("*.jpg"))) == 2

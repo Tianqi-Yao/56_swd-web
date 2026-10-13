@@ -18,7 +18,7 @@ from typing import Optional
 
 import cv2
 
-from common import Config, load_config, write_json_atomic
+from common import Config, load_config, unique_path, write_json_atomic
 from detect import detect, load_model
 from images import prune_images
 
@@ -85,7 +85,7 @@ def capture_once(cfg: Config, now: datetime, model, run=subprocess.run) -> Optio
     prune_images(cfg.images_dir, cfg.disk_path, cfg.max_image_pct, cfg.state_dir, now)
 
     stamp = now.strftime("%Y%m%d_%H%M%S")
-    photo = cfg.images_dir / f"{stamp}.jpg"
+    photo = unique_path(cfg.images_dir / f"{stamp}.jpg")
     if not take_photo(cfg, photo, run=run):
         return None
     img = cv2.imread(str(photo))
@@ -109,7 +109,7 @@ def capture_once(cfg: Config, now: datetime, model, run=subprocess.run) -> Optio
         "infer_ms": infer_ms,
     }
     if is_noon_slot(now, cfg.thumbs_dir):
-        thumb = f"{stamp}.jpg"
+        thumb = unique_path(cfg.thumbs_dir / f"{stamp}.jpg").name
         try:
             make_thumbnail(img, cfg.thumbs_dir / thumb)
             h, w = img.shape[:2]
@@ -122,7 +122,7 @@ def capture_once(cfg: Config, now: datetime, model, run=subprocess.run) -> Optio
         except Exception:
             log.exception("thumbnail failed, writing count only")
 
-    out = cfg.outbox_dir / f"{cfg.device_id}_{stamp}.json"
+    out = unique_path(cfg.outbox_dir / f"{cfg.device_id}_{stamp}.json")
     write_json_atomic(out, record)
     log.info("captured %s: %d male SWD in %d ms", stamp, len(boxes), infer_ms)
     return out

@@ -66,3 +66,12 @@ def test_free_gb_one_decimal(monkeypatch):
     Usage = namedtuple("Usage", "total used free")
     monkeypatch.setattr(sensors.shutil, "disk_usage", lambda p: Usage(0, 0, 42_123_456_789))
     assert free_gb(Path("/")) == 39.2
+
+
+def test_garbage_line_does_not_raise(tmp_path):
+    # 断电时 SD 卡写坏的行：超长字段在任何 Python 版本都会让 csv 抛 csv.Error
+    d = tmp_path / "logs"
+    d.mkdir()
+    (d / "2026-07-15.csv").write_text(
+        "2026-07-15,11:59:00,25.1,60.0\n" + "x" * 300_000 + "\n2026-07-15,12:00:30,25.3,61.0\n")
+    assert read_temp_rh(d, datetime(2026, 7, 15, 12, 0, 0)) in [(25.1, 60.0), (25.3, 61.0)]

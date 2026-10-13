@@ -168,3 +168,45 @@ def test_emulator_endpoints(make_cfg):
     client.put("heartbeat/MSU1", {})
     client.upload_jpeg("thumbs/MSU1/2026-07-15.jpg", b"x")
     assert qs(responses.calls[1]) == {"ns": ["demo-swd-web-default-rtdb"], "auth": ["E1"]}
+
+
+@responses.activate
+@pytest.mark.parametrize("status", [408, 429])
+def test_transient_4xx_is_network_error(cfg, status):
+    add_signin()
+    responses.add(responses.PUT, READING, status=status)
+    with pytest.raises(NetworkError):
+        FirebaseClient(cfg, clock=Clock()).put("readings/MSU1/2026-07-15/120003", {})
+
+
+@responses.activate
+def test_cached_token_from_future_clock_is_discarded(cfg):
+    # RTC 故障：时钟跳回 2000 年，缓存里 2026 年的 token 不能当成"还有 26 年才过期"
+    (cfg.state_dir / "token.json").write_text(json.dumps(
+        {"id_token": "OLD", "refresh_token": "R0", "expires_at": 1_800_000_000.0}))
+    add_signin(token="NEW")
+    responses.add(responses.PUT, READING, json={})
+    FirebaseClient(cfg, clock=Clock(946_684_800.0)).put("readings/MSU1/2026-07-15/120003", {})
+    assert qs(responses.calls[-1])["auth"] == ["NEW"]
+
+
+@responses.activate
+def test_401_with_cached_token_signs_in_again_and_retries_once(cfg):
+    clock = Clock()
+    (cfg.state_dir / "token.json").write_text(json.dumps(
+        {"id_token": "STALE", "refresh_token": "R0", "expires_at": clock.t + 3000}))
+    responses.add(responses.PUT, READING, status=401, json={"error": "Permission denied"})
+    add_signin(token="FRESH")
+    responses.add(responses.PUT, READING, json={})
+    FirebaseClient(cfg, clock=clock).put("readings/MSU1/2026-07-15/120003", {})
+    assert [qs(c).get("auth") for c in responses.calls if c.request.method == "PUT"] == [["STALE"], ["FRESH"]]
+
+
+@responses.activate
+def test_401_after_fresh_signin_still_raises(cfg):
+    add_signin()
+    responses.add(responses.PUT, READING, status=401, json={"error": "Permission denied"})
+    add_signin(token="ID2")
+    responses.add(responses.PUT, READING, status=401, json={"error": "Permission denied"})
+    with pytest.raises(AuthError):
+        FirebaseClient(cfg, clock=Clock()).put("readings/MSU1/2026-07-15/120003", {})

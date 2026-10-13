@@ -33,7 +33,14 @@ def _rows(path: Path) -> Iterable[Tuple[datetime, List[str]]]:
     except OSError:
         return
     with f:
-        for row in csv.reader(f):
+        reader = csv.reader(f)
+        while True:
+            try:
+                row = next(reader)
+            except StopIteration:
+                return
+            except csv.Error:
+                continue  # 断电写坏的行（NUL、超长字段），跳过
             if len(row) < 3:
                 continue
             try:

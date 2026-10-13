@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from common import Config, load_config, local_naive, parse_acquired_at
+from common import Config, load_config, local_naive, parse_acquired_at, unique_path
 from fbclient import AuthError, ClientError, FirebaseClient, NetworkError
 from images import image_status
 from sensors import free_gb, read_battery, read_temp_rh
@@ -101,7 +101,7 @@ def _upload_thumb(rec: dict, cfg: Config, client: FirebaseClient, day: str) -> N
 
 def _move(src: Path, dest_dir: Path) -> None:
     dest_dir.mkdir(parents=True, exist_ok=True)
-    src.replace(dest_dir / src.name)
+    src.replace(unique_path(dest_dir / src.name))
 
 
 def _prune_sent(cfg: Config, now: datetime) -> None:
@@ -125,7 +125,8 @@ def run_once(cfg: Config, client: FirebaseClient, now: datetime) -> dict:
 
     for path in sorted(cfg.outbox_dir.glob("*.json")):
         try:
-            if now.timestamp() - path.stat().st_mtime < MIN_AGE_S:
+            age = now.timestamp() - path.stat().st_mtime
+            if 0 <= age < MIN_AGE_S:  # 负数说明时钟往回跳过，不能当成刚写的
                 result["skipped"] += 1
                 continue
             rec, at = _validate(path, cfg)
@@ -138,7 +139,10 @@ def run_once(cfg: Config, client: FirebaseClient, now: datetime) -> dict:
             continue  # 文件在扫描期间被挪走了
 
         day, hms = at.strftime("%Y-%m-%d"), at.strftime("%H%M%S")
-        _fill_sensors(rec, cfg, at)
+        try:
+            _fill_sensors(rec, cfg, at)
+        except Exception:
+            log.exception("sensor fill failed for %s, uploading without sensor values", path.name)
         try:
             if rec.get("thumb"):
                 _upload_thumb(rec, cfg, client, day)

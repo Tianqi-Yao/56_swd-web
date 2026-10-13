@@ -19,6 +19,8 @@ from common import Config
 
 TIMEOUT = 30
 REFRESH_MARGIN = 300  # token 剩不到 5 分钟就刷新
+MAX_TOKEN_LIFETIME = 3600 + 60  # Firebase ID token 有效期 1 小时；缓存里比这还远的说明时钟往回跳过
+TRANSIENT_4XX = (408, 429)
 
 
 class NetworkError(Exception):
@@ -43,6 +45,7 @@ class FirebaseClient:
         self.clock = clock
         self.token_path = cfg.state_dir / "token.json"
         self._token: Optional[dict] = None
+        self._token_fresh = False  # 本进程里刚登录或刚刷新拿到的 token
 
         host = cfg.emulator_host
         if host:
@@ -62,25 +65,35 @@ class FirebaseClient:
     # ---------- 公共接口 ----------
 
     def put(self, path: str, data: dict) -> None:
-        self._db("PUT", path, data)
+        self._with_token(lambda tok: self._db("PUT", path, data, tok))
 
     def patch(self, path: str, data: dict) -> None:
-        self._db("PATCH", path, data)
+        self._with_token(lambda tok: self._db("PATCH", path, data, tok))
 
     def upload_jpeg(self, storage_path: str, data: bytes) -> None:
-        token = self._id_token()
         # Storage 要求对象名里的 / 也编码成 %2F
         url = f"{self.storage_base}?name={quote(storage_path, safe='')}"
-        self._request(
+        self._with_token(lambda tok: self._request(
             "POST", url,
-            headers={"Authorization": f"Firebase {token}", "Content-Type": "image/jpeg"},
+            headers={"Authorization": f"Firebase {tok}", "Content-Type": "image/jpeg"},
             data=data,
-        )
+        ))
 
     # ---------- 内部 ----------
 
-    def _db(self, method: str, path: str, data: dict) -> None:
-        params = {"auth": self._id_token()}
+    def _with_token(self, call) -> None:
+        """缓存的 token 被拒（401/403）时重新登录再试一次；刚拿到的 token 被拒就是真没权限。"""
+        token = self._id_token()
+        try:
+            call(token)
+        except AuthError:
+            if self._token_fresh:
+                raise
+            self._sign_in()
+            call(self._token["id_token"])
+
+    def _db(self, method: str, path: str, data: dict, token: str) -> None:
+        params = {"auth": token}
         if self.cfg.emulator_host:
             params = {"ns": self.db_ns, **params}
         url = f"{self.db_base}/{path.strip('/')}.json"
@@ -91,7 +104,7 @@ class FirebaseClient:
             r = self.session.request(method, url, timeout=TIMEOUT, **kw)
         except requests.RequestException as e:
             raise NetworkError(str(e)) from e
-        if r.status_code >= 500:
+        if r.status_code >= 500 or r.status_code in TRANSIENT_4XX:
             raise NetworkError(f"HTTP {r.status_code}: {r.text[:200]}")
         if r.status_code in (401, 403):
             raise AuthError(f"HTTP {r.status_code}: {r.text[:200]}")
@@ -103,6 +116,8 @@ class FirebaseClient:
         if self._token is None:
             self._token = self._load_cached()
         now = self.clock()
+        if self._token is not None and self._token["expires_at"] - now > MAX_TOKEN_LIFETIME:
+            self._token = None  # 时钟往回跳了，缓存的过期时间不可信
         if self._token is None:
             self._sign_in()
         elif now >= self._token["expires_at"] - REFRESH_MARGIN:
@@ -136,6 +151,7 @@ class FirebaseClient:
         self._save(body["id_token"], body["refresh_token"], body["expires_in"])
 
     def _save(self, id_token: str, refresh_token: str, expires_in) -> None:
+        self._token_fresh = True
         self._token = {
             "id_token": id_token,
             "refresh_token": refresh_token,

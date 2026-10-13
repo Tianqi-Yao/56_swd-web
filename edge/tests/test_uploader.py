@@ -316,3 +316,30 @@ def test_old_sent_dirs_pruned(cfg):
         (d / "x.json").write_text("{}")
     run_once(cfg, FakeClient(), NOW)
     assert not old.exists() and keep.exists()
+
+
+def test_file_from_future_mtime_not_skipped(cfg):
+    # 时钟往回跳后，之前写的文件 mtime 比 now 还晚，不能被当成"刚写的"一直跳过
+    put_outbox(cfg, "a.json", record(), age_s=-86400)
+    result = run_once(cfg, FakeClient(), NOW)
+    assert result["skipped"] == 0 and result["sent"] == 1
+
+
+def test_unexpected_sensor_error_does_not_block_queue(cfg, monkeypatch):
+    import uploader
+    def boom(*a):
+        raise RuntimeError("weird log")
+    monkeypatch.setattr(uploader, "read_temp_rh", boom)
+    put_outbox(cfg, "a.json", record())
+    client = FakeClient()
+    result = run_once(cfg, client, NOW)
+    assert result["sent"] == 1
+    assert "temp_c" not in client.puts()[0][1]
+
+
+def test_sent_name_collision_keeps_both(cfg):
+    put_outbox(cfg, "a.json", record(hms="120003"))
+    run_once(cfg, FakeClient(), NOW)
+    put_outbox(cfg, "a.json", record(hms="123003"))
+    run_once(cfg, FakeClient(), NOW)
+    assert len(list((cfg.sent_dir / "2026-07-15").iterdir())) == 2
